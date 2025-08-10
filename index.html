@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Live Score Bug — NCAA Top 25 & NFL</title>
+  <title>Live Score Bug — NCAA Top 25 Live Scores & NFL</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500&display=swap');
@@ -129,8 +129,8 @@
 </head>
 <body>
   <div class="container">
-    <section class="panel" id="ncaapanel" aria-label="NCAA Top 25 Football Rankings">
-      <h2>NCAA Top 25</h2>
+    <section class="panel" id="ncaapanel" aria-label="NCAA Top 25 Football Live Scores">
+      <h2>NCAA Top 25 Live Scores</h2>
       <div id="ncaalist" class="list" role="list">Loading...</div>
     </section>
 
@@ -146,7 +146,6 @@ const UPDATE_MS = 60000;
 // Helper: team logo from ESPN or fallback placeholder
 function getTeamLogo(team) {
   if (team?.logos && team.logos.length) {
-    // Prefer smaller logos if available (width ~32)
     const logoObj = team.logos.find(l => l.width <= 64) || team.logos[0];
     return logoObj.href;
   }
@@ -159,18 +158,47 @@ async function fetchJson(url) {
   return await res.json();
 }
 
+// Fetch top 25 ranked teams
+async function fetchTop25Teams() {
+  const data = await fetchJson('https://site.api.espn.com/apis/site/v2/sports/football/college-football/rankings');
+  let group = data?.rankings?.[0] || null;
+  if (!group) return [];
+  return group.ranks?.slice(0,25).map(t => t.team);
+}
+
+// Fetch all NCAA football games (today)
+async function fetchNCAAGames() {
+  const data = await fetchJson('https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard');
+  return data?.events || [];
+}
+
+// Match a team with its game and return score info or 'No game'
+function findTeamGameScore(team, games) {
+  for (const ev of games) {
+    const comps = ev.competitions?.[0]?.competitors || [];
+    for (const comp of comps) {
+      if (comp.team?.id === team.id) {
+        const opp = comps.find(c => c.team?.id !== team.id);
+        return {
+          teamScore: comp.score ?? '',
+          oppName: opp?.team?.displayName || 'Unknown',
+          oppScore: opp?.score ?? '',
+          status: ev.status?.type?.shortDetail || ev.status?.type?.description || '',
+          isHome: comp.homeAway === 'home'
+        };
+      }
+    }
+  }
+  return null;
+}
+
 async function updateNCAA() {
   const el = document.getElementById('ncaalist');
   try {
-    const data = await fetchJson('https://site.api.espn.com/apis/site/v2/sports/football/college-football/rankings');
-    let group = data?.rankings?.[0] || null;
-    if (!group) {
-      el.innerText = 'No rankings found';
-      return;
-    }
-    const teams = group.ranks?.slice(0,25) || [];
+    const teams = await fetchTop25Teams();
+    const games = await fetchNCAAGames();
     el.innerHTML = '';
-    teams.forEach(item => {
+    teams.forEach((team, idx) => {
       const row = document.createElement('div');
       row.className = 'team';
 
@@ -179,33 +207,47 @@ async function updateNCAA() {
 
       const rank = document.createElement('div');
       rank.className = 'rank';
-      rank.textContent = item.rank;
+      rank.textContent = idx + 1;
 
       const logo = document.createElement('img');
       logo.className = 'logo';
-      logo.src = getTeamLogo(item.team);
-      logo.alt = item.team?.displayName + ' logo';
+      logo.src = getTeamLogo(team);
+      logo.alt = team.displayName + ' logo';
 
       const name = document.createElement('div');
       name.className = 'name';
-      name.textContent = item.team?.displayName || item.school;
+      name.textContent = team.displayName;
 
-      const record = document.createElement('div');
-      record.className = 'record';
-      record.textContent = item.team?.record || (item.record || '');
+      left.append(rank, logo, name);
 
-      left.append(rank, logo, name, record);
+      // Find current game or latest game score
+      const gameInfo = findTeamGameScore(team, games);
 
       const score = document.createElement('div');
       score.className = 'score';
-      score.textContent = item.points ? item.points + ' pts' : '';
 
-      row.append(left, score);
+      const record = document.createElement('div');
+      record.className = 'record';
+
+      if (gameInfo) {
+        // Show "TeamScore - OppScore" with team on left or right depending on home/away
+        const scoreText = gameInfo.isHome
+          ? `${gameInfo.teamScore} - ${gameInfo.oppScore}`
+          : `${gameInfo.oppScore} - ${gameInfo.teamScore}`;
+        score.textContent = scoreText;
+
+        record.textContent = gameInfo.status;
+      } else {
+        score.textContent = 'No Game';
+        record.textContent = '';
+      }
+
+      row.append(left, record, score);
       el.appendChild(row);
     });
   } catch (e) {
     console.error('NCAA fetch error', e);
-    el.innerText = 'Error loading rankings — check console.';
+    el.innerText = 'Error loading NCAA scores — check console.';
   }
 }
 
