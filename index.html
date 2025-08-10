@@ -1,0 +1,275 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Live Score Bug — NCAA Top 25 & NFL</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500&display=swap');
+    html,body {
+      height:100%;
+      margin:0;
+      background:#000;
+      color:#fff;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      user-select:none;
+    }
+    .container {
+      display:flex;
+      height:100vh;
+      gap:30px;
+      padding:20px;
+      box-sizing:border-box;
+      justify-content:center;
+      align-items:flex-start;
+    }
+    .panel {
+      background: rgba(20,20,20,0.85);
+      border-radius: 10px;
+      flex:1;
+      max-width: 600px;
+      display:flex;
+      flex-direction:column;
+      overflow-y:auto;
+      box-shadow: 0 0 15px #00ffffaa;
+      padding:15px 20px;
+    }
+    h2 {
+      margin:0 0 12px 0;
+      font-family: 'Orbitron', monospace;
+      font-size: 24px;
+      letter-spacing: 3px;
+      color:#00ffff;
+      text-transform: uppercase;
+      border-bottom: 2px solid #00ffff;
+      padding-bottom: 8px;
+      user-select:none;
+    }
+    .list {
+      flex-grow: 1;
+      overflow-y:auto;
+      scrollbar-width: thin;
+      scrollbar-color: #00ffff44 transparent;
+    }
+    .list::-webkit-scrollbar {
+      width: 6px;
+    }
+    .list::-webkit-scrollbar-thumb {
+      background-color: #00ffff44;
+      border-radius: 3px;
+    }
+    .team, .game {
+      display:flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 6px;
+      border-bottom: 1px solid #00ffff33;
+      user-select:none;
+    }
+    .team:last-child, .game:last-child {
+      border-bottom: none;
+    }
+    .team-left, .game-left {
+      display:flex;
+      align-items:center;
+      gap: 12px;
+      min-width: 280px;
+    }
+    .rank {
+      width: 30px;
+      text-align: right;
+      font-weight: 700;
+      font-family: 'Orbitron', monospace;
+      color:#00cccc;
+      user-select:none;
+    }
+    .logo {
+      width: 32px;
+      height: 32px;
+      object-fit: contain;
+      border-radius: 4px;
+      background: #111;
+      box-shadow: 0 0 4px #00ffffaa;
+    }
+    .name {
+      font-weight: 600;
+      font-size: 16px;
+      color:#eee;
+      user-select:none;
+    }
+    .record {
+      font-size: 13px;
+      color: #ccc;
+      user-select:none;
+      min-width: 70px;
+      text-align: center;
+      font-style: italic;
+    }
+    .score {
+      font-family: 'Orbitron', monospace;
+      font-size: 18px;
+      font-weight: 700;
+      min-width: 50px;
+      text-align: right;
+      color:#00ffff;
+      user-select:none;
+    }
+    .game-status {
+      font-size: 13px;
+      color: #44ffffaa;
+      font-style: italic;
+      margin-left: 8px;
+      user-select:none;
+    }
+    /* Scroll container for NFL games */
+    #nfllist {
+      max-height: 90vh;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <section class="panel" id="ncaapanel" aria-label="NCAA Top 25 Football Rankings">
+      <h2>NCAA Top 25</h2>
+      <div id="ncaalist" class="list" role="list">Loading...</div>
+    </section>
+
+    <section class="panel" id="nflpanel" aria-label="NFL Scores">
+      <h2>NFL Scores</h2>
+      <div id="nfllist" class="list" role="list">Loading...</div>
+    </section>
+  </div>
+
+<script>
+const UPDATE_MS = 60000;
+
+// Helper: team logo from ESPN or fallback placeholder
+function getTeamLogo(team) {
+  if (team?.logos && team.logos.length) {
+    // Prefer smaller logos if available (width ~32)
+    const logoObj = team.logos.find(l => l.width <= 64) || team.logos[0];
+    return logoObj.href;
+  }
+  return 'https://via.placeholder.com/32?text=?';
+}
+
+async function fetchJson(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Fetch failed: ' + res.status);
+  return await res.json();
+}
+
+async function updateNCAA() {
+  const el = document.getElementById('ncaalist');
+  try {
+    const data = await fetchJson('https://site.api.espn.com/apis/site/v2/sports/football/college-football/rankings');
+    let group = data?.rankings?.[0] || null;
+    if (!group) {
+      el.innerText = 'No rankings found';
+      return;
+    }
+    const teams = group.ranks?.slice(0,25) || [];
+    el.innerHTML = '';
+    teams.forEach(item => {
+      const row = document.createElement('div');
+      row.className = 'team';
+
+      const left = document.createElement('div');
+      left.className = 'team-left';
+
+      const rank = document.createElement('div');
+      rank.className = 'rank';
+      rank.textContent = item.rank;
+
+      const logo = document.createElement('img');
+      logo.className = 'logo';
+      logo.src = getTeamLogo(item.team);
+      logo.alt = item.team?.displayName + ' logo';
+
+      const name = document.createElement('div');
+      name.className = 'name';
+      name.textContent = item.team?.displayName || item.school;
+
+      const record = document.createElement('div');
+      record.className = 'record';
+      record.textContent = item.team?.record || (item.record || '');
+
+      left.append(rank, logo, name, record);
+
+      const score = document.createElement('div');
+      score.className = 'score';
+      score.textContent = item.points ? item.points + ' pts' : '';
+
+      row.append(left, score);
+      el.appendChild(row);
+    });
+  } catch (e) {
+    console.error('NCAA fetch error', e);
+    el.innerText = 'Error loading rankings — check console.';
+  }
+}
+
+async function updateNFL() {
+  const el = document.getElementById('nfllist');
+  try {
+    const data = await fetchJson('https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard');
+    const events = data?.events || [];
+    if (!events.length) {
+      el.innerText = 'No games found';
+      return;
+    }
+    el.innerHTML = '';
+    events.forEach(ev => {
+      const g = document.createElement('div');
+      g.className = 'game';
+
+      const comps = ev.competitions?.[0]?.competitors || [];
+
+      comps.forEach(team => {
+        const row = document.createElement('div');
+        row.className = 'team-left';
+
+        const logo = document.createElement('img');
+        logo.className = 'logo';
+        logo.src = getTeamLogo(team.team);
+        logo.alt = team.team?.displayName + ' logo';
+
+        const name = document.createElement('div');
+        name.className = 'name';
+        name.textContent = team.team?.abbreviation || team.team?.displayName || team.team?.name;
+
+        const record = document.createElement('div');
+        record.className = 'record';
+        record.textContent = team.records?.[0]?.summary || '';
+
+        const score = document.createElement('div');
+        score.className = 'score';
+        score.textContent = team.score ?? '';
+
+        row.append(logo, name, record, score);
+
+        g.appendChild(row);
+      });
+
+      const status = document.createElement('div');
+      status.className = 'game-status';
+      status.textContent = ev.status?.type?.shortDetail || ev.status?.type?.description || '';
+
+      g.appendChild(status);
+      el.appendChild(g);
+    });
+  } catch (e) {
+    console.error('NFL fetch error', e);
+    el.innerText = 'Error loading NFL scores — check console.';
+  }
+}
+
+async function updateAll() {
+  await Promise.allSettled([updateNCAA(), updateNFL()]);
+}
+
+updateAll();
+setInterval(updateAll, UPDATE_MS);
+</script>
+</body>
+</html>
